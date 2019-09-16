@@ -1,0 +1,202 @@
+#! /usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import click
+import os
+import re
+import string
+import sys
+import shutil
+
+@click.group()
+def cfo():
+    pass
+
+@cfo.command()
+@click.argument('root', nargs=1)
+def init(root):
+    """
+    Initializes cfo with root directory for CTF folders.
+
+    Configuration is stored in ~/.config/cfo/config
+    """
+    root_path = os.path.abspath(root)
+    os.makedirs(root_path, exist_ok=True)
+
+    cfo_config_dir = os.path.join(os.environ['HOME'], '.config', 'cfo')
+    os.makedirs(cfo_config_dir, exist_ok=True)
+
+    cfo_config = os.path.join(cfo_config_dir, 'config')
+
+    f = open(cfo_config, 'w+')
+    f.write(root_path)
+    f.close()
+    click.echo('[*] Initialized with {} as root CTF directory'.format(root_path))
+    click.echo('[*] Wrote configuration to {}'.format(cfo_config))
+
+@cfo.command()
+@click.argument('ctf', nargs=1)
+def set(ctf):
+    """
+    Sets given CTF as the current working CTF folder. Must be run after cfo init.
+
+    Also creates an optional alias 'cfod' that will change
+    directories to this CTF folder in ~/.config/cfo/cfod-alias
+    """
+    config_dir = os.path.join(os.environ['HOME'], '.config', 'cfo')
+    if os.path.exists(config_dir):
+
+        config_path = os.path.join(config_dir, 'config')
+        with open(config_path, 'r') as f:
+            ctf_path = f.read()
+
+        current_ctf_path = os.path.join(config_dir, 'current')
+        current_ctf = os.path.join(ctf_path, ctf)
+        with open(current_ctf_path, 'w+') as f:
+            f.write(current_ctf)
+
+        alias = 'alias cfod="cd {}"'.format(current_ctf)
+        alias_path = os.path.join(config_dir, 'cfod-alias')
+        with open(alias_path, 'w+') as f:
+            f.write(alias)
+
+        click.echo('[+] Source {} in your ~/.bashrc file to register alias'.format(alias_path))
+    else:
+        click.echo('[!] Config folder not found; run cfo init <root-ctf-folder>')
+        exit()
+
+
+@cfo.command()
+@click.argument('ctf', nargs=1)
+@click.option('-r', is_flag=True, help='adds a folder for reversing challenges')
+@click.option('-w', is_flag=True, help='adds a folder for web challenges')
+@click.option('-c', is_flag=True, help='adds a folder for cryptography challenges')
+@click.option('-f', is_flag=True, help='adds a folder for forensics challenges')
+@click.option('-p', is_flag=True, help='adds a folder for binary exploitation (pwn) challenges')
+@click.option('-m', is_flag=True, help='adds a folder for miscellaneous challenges')
+@click.option('-o', multiple=True, metavar='<folder-name>', help='adds a custom named folder for other challenges (can be used multiple times)')
+@click.option('-x', is_flag=True, help='makes this the current working CTF folder')
+@click.pass_context
+def new(ctx, ctf, r, w, c, f, p, m, o, x):
+    """Instantiate a new CTF folder structure"""
+    config_path = os.path.join(os.environ['HOME'], '.config', 'cfo', 'config')
+    if os.path.exists(config_path):
+        config = open(config_path, 'r')
+        root_path = config.read()
+        config.close()
+
+        ctf_path = os.path.join(root_path, ctf)
+        if os.path.exists(ctf_path):
+            click.echo('[!] Folder for {} exists; delete it or use a different name'.format(ctf))
+            exit()
+
+        folders = []
+        if r:
+            folders.append('reversing')
+            click.echo('[+] Adding reversing folder')
+        if w:
+            folders.append('web')
+            click.echo('[+] Adding web folder')
+        if c:
+            folders.append('cryptography')
+            click.echo('[+] Adding cryptography folder')
+        if f:
+            folders.append('forensics')
+            click.echo('[+] Adding forensics folder')
+        if p:
+            folders.append('pwn')
+            click.echo('[+] Adding pwn folder')
+        if m:
+            folders.append('miscellaneous')
+            click.echo('[+] Adding miscellaneous folder')
+        if o:
+            folders += o
+            click.echo('[+] Adding {} folder(s)'.format(str(o)))
+        if x:
+            ctx.forward(set)
+
+        os.makedirs(ctf_path)
+        for folder in folders:
+            os.makedirs(os.path.join(ctf_path, folder))
+        
+        click.echo('[*] Category folders written to {}'.format(ctf_path))
+
+    else:
+        click.echo('[!] Configuration does not exist; run cfo init <root-ctf-dir>')
+    
+
+@cfo.command()
+@click.argument('category', nargs=1)#, help='challenge category')
+@click.argument('challenge', nargs=1)#, help='name of the challenge to be added')
+@click.argument('resource', nargs=-1)#, help='resource(s) to be added to the challenge directory')
+def add(category, challenge, resource):
+    """
+    Adds a challenge to the current working CTF folder.
+    
+    Shorthand can be used for common categories as follows:
+    r = reversing
+    w = web
+    c = cryptography
+    f = forensics
+    p = pwn
+    m = miscellaneous
+
+    For custom categories dictated by the CTF, you can type the full category
+    name. If a folder for the category doesn't already exist, it will be
+    created.
+
+    Files and folders can be specified to be copied over to the
+    challenge folder, if any.
+    """
+
+    current_ctf = os.path.join(os.environ['HOME'], '.config', 'cfo', 'current')
+    if not os.path.exists(current_ctf):
+        click.echo('[!] Current CTF not set; run cfo set <ctf-folder>')
+        exit()
+    with open(current_ctf, 'r') as f:
+        ctf = f.read()
+
+    for i in resource:
+        if not os.path.exists(i):
+            click.echo('[!] File or directory {} does not exist!'.format(i))
+            exit()
+    
+    folders = ['original', 'working', 'submit']
+
+    types = {
+        'r': 'reversing',
+        'w': 'web',
+        'c': 'cryptography',
+        'f': 'forensics',
+        'p': 'pwn',
+        'm': 'miscellaneous',
+    }
+
+    if category in types:
+        challenge_dir = os.path.join(ctf, types[category], challenge)
+        click.echo('[+] Inserting {} into {} folder'.format(challenge, types[category]))
+    else:
+        challenge_dir = os.path.join(ctf, category, challenge)
+        click.echo('[+] Inserting {} into {} folder'.format(challenge, category))
+
+    for folder in folders:
+        os.makedirs(os.path.join(challenge_dir, folder), exist_ok=True)
+
+    for i in resource:
+        path = os.path.abspath(i)
+        name = os.path.basename(path)
+
+        original_path = os.path.join(challenge_dir, 'original', name)
+        working_path = os.path.join(challenge_dir, 'working', name)
+
+        shutil.move(path, original_path)
+        if (os.path.isdir(original_path)):
+            shutil.copytree(original_path, working_path)
+        else:
+            shutil.copy2(original_path, working_path)
+
+        click.echo('[+] Added {}'.format(name))
+
+
+if __name__ == '__main__':
+    cfo()
