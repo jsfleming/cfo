@@ -7,7 +7,7 @@ setup(
     name = 'cfo',
     version = '1.0',
     author = 'jsfleming',
-    author_email = 'jsfleming@pm.me'
+    author_email = 'jsfleming@pm.me',
 
     url = 'https://github.com/jsfleming/cfo',
     description = 'CTF Folder Organizer',
