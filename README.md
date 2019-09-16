@@ -1,5 +1,5 @@
 # cfo 
-*C*TF *F*older *O*rganizer. Used to help quickly generate folder structures
+**C**TF **F**older **O**rganizer. Used to help quickly generate folder structures
 for challenges while participating in a CTF.
 
 ## Motivation
